@@ -17,7 +17,7 @@ Use the runtime that fits your stack today, then switch per project/task without
 - **Claude (`anthropic`)** — SDK, CLI, API transports
 - **Codex (`openai`)** — SDK, CLI, App Server, API transports
 - **OpenRouter (`openrouter`)** — API transport
-- **OpenCode (`opencode`)** — API transport
+- **OpenCode (`opencode`)** — API and CLI transports
 
 > **⚠️ Warning:** Anthropic prohibits using Claude Max / Pro subscriptions outside of the official Claude Code CLI. The SDK transport for Claude calls the Agent SDK directly, which may violate these terms. If you're worried about your subscription getting blocked, use the **CLI transport** — it runs through the official Claude Code CLI and is safe to use on a Max / Pro subscription. Use the SDK transport at your own risk, or switch to the API transport with an `ANTHROPIC_API_KEY` for production use.
 
@@ -229,7 +229,9 @@ OPENCODE_SERVER_PASSWORD='your-strong-password' opencode serve --hostname 127.0.
 
 3. Validate profile connection in UI and use it for chat/task stages.
 
-Full OpenCode options and examples: [Providers](docs/providers.md#opencode-api).
+Prefer no server? Use the **CLI transport** (`transport: "cli"`) — it runs `opencode run --format json` locally and is handy for local models already configured in OpenCode (`opencode auth login`, then `opencode models` for exact model IDs).
+
+Full OpenCode options and examples: [Providers](docs/providers.md#opencode-api--cli).
 
 ## Architecture
 

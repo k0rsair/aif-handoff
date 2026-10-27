@@ -29,6 +29,7 @@ export interface RuntimeResolutionEnv {
   OPENROUTER_MODEL?: string;
   CODEX_BASE_URL?: string;
   CODEX_CLI_PATH?: string;
+  OPENCODE_CLI_PATH?: string;
   [key: string]: string | undefined;
 }
 
@@ -133,6 +134,7 @@ function inferDefaultBaseUrl(
 function inferDefaultTransport(runtimeId: string): RuntimeTransport {
   if (runtimeId.toLowerCase() === "codex") return RuntimeTransport.CLI;
   if (runtimeId.toLowerCase() === "openrouter") return RuntimeTransport.API;
+  if (runtimeId.toLowerCase() === "opencode") return RuntimeTransport.API;
   return RuntimeTransport.SDK;
 }
 
@@ -234,10 +236,16 @@ function applyTransportDefaults(
   env: RuntimeResolutionEnv,
 ): Record<string, unknown> {
   if (transport === RuntimeTransport.CLI) {
+    let next = options;
     const codexCliPath = normalizeString(env.CODEX_CLI_PATH);
-    if (codexCliPath && options.codexCliPath == null) {
-      return { ...options, codexCliPath };
+    if (codexCliPath && next.codexCliPath == null) {
+      next = { ...next, codexCliPath };
     }
+    const opencodeCliPath = normalizeString(env.OPENCODE_CLI_PATH);
+    if (opencodeCliPath && next.opencodeCliPath == null) {
+      next = { ...next, opencodeCliPath };
+    }
+    return next;
   }
 
   return options;
@@ -389,10 +397,13 @@ export function validateResolvedRuntimeProfile(
     }
   }
 
-  // CLI transport requires a CLI path
+  // CLI transport requires a CLI path. This check is codex-specific:
+  // opencode resolves its binary from options.opencodeCliPath / OPENCODE_CLI_PATH
+  // and well-known install locations, so it must not trip the codexCliPath warning.
   if (
     (resolved.transport === RuntimeTransport.CLI ||
       resolved.transport === RuntimeTransport.APP_SERVER) &&
+    resolved.runtimeId.toLowerCase() !== "opencode" &&
     typeof resolved.options.codexCliPath !== "string"
   ) {
     warnings.push(

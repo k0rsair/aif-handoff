@@ -74,6 +74,11 @@ describe("Timeout coverage guard", () => {
       const agyCli = readAdapterSource("antigravity/cli.ts");
       expect(hasAnyPattern(agyCli, PROCESS_TIMEOUT_PATTERNS)).toBe(true);
     });
+
+    it("OpenCode CLI (opencode/cli.ts)", () => {
+      const ocCli = readAdapterSource("opencode/cli.ts");
+      expect(hasAnyPattern(ocCli, PROCESS_TIMEOUT_PATTERNS)).toBe(true);
+    });
   });
 
   describe("HTTP transports must support runTimeoutMs", () => {
@@ -109,6 +114,7 @@ describe("Timeout coverage guard", () => {
       "Codex API": ["codex/api.ts"],
       "OpenRouter API": ["openrouter/api.ts"],
       "Antigravity CLI": ["antigravity/cli.ts"],
+      "OpenCode CLI": ["opencode/cli.ts"],
     })) {
       it(`${name} imports shared timeout utilities`, () => {
         const sources = files.map((f) => readAdapterSource(f));

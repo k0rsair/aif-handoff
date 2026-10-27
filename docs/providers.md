@@ -64,7 +64,7 @@ The API exposes effective selection endpoints:
 | `claude`      | `anthropic`  | SDK, CLI, API             | Yes (SDK/CLI)            | Yes (SDK/CLI)    | Yes (SDK/CLI)        | Yes (SDK/CLI) | No               | No                | `FULL` (all transports)                  | `claude-haiku-3-5`     | Built-in                  |
 | `codex`       | `openai`     | SDK, CLI, App Server, API | Yes (SDK/CLI/App Server) | Yes (App Server) | Yes (SDK/App Server) | No            | SDK only         | SDK only          | `FULL` SDK/API, `PARTIAL` CLI/App Server | default                | Built-in                  |
 | `antigravity` | `google`     | CLI                       | Yes                      | No               | No                   | No            | No               | No                | `FULL`                                   | `gemini-3.8-flash-low` | Built-in                  |
-| `opencode`    | `opencode`   | API                       | Yes                      | No               | Yes                  | No            | No               | No                | `NONE`                                   | null (configurable)    | Built-in                  |
+| `opencode`    | `opencode`   | API, CLI                  | Yes                      | No               | Yes (API)            | No            | No               | No                | `NONE` API, `PARTIAL` CLI                | null (configurable)    | Built-in                  |
 | `openrouter`  | `openrouter` | API                       | No                       | No               | No                   | No            | No               | No                | `FULL`                                   | null (configurable)    | Built-in                  |
 | Custom        | Any          | Any                       | Configurable             | Configurable     | Configurable         | Configurable  | Configurable     | Configurable      | Must declare                             | Configurable           | Via `AIF_RUNTIME_MODULES` |
 
@@ -103,7 +103,7 @@ Runtime-limit auto-pause depends on what each provider/transport can actually su
 | Codex API                    | OpenAI-compatible rate-limit headers    | `exact`     | Exact request/token limits and reset times from `x-ratelimit-*` + `retry-after`                                                                                                                               |
 | Codex SDK / CLI / App Server | Codex session `token_count.rate_limits` | `exact`     | API background indexing tails persisted Codex session logs into SQLite (`codex_limit_heads`/`codex_limit_history`); `/runtime-profiles` overlays read from that index instead of per-request filesystem scans |
 | OpenRouter API               | OpenAI-compatible rate-limit headers    | `exact`     | Uses `x-ratelimit-*` / `retry-after` when the upstream provides them                                                                                                                                          |
-| OpenCode API                 | structured error metadata               | `heuristic` | Preserves `resetAt` / retry hints on rate-limit errors, but no proactive normalized snapshot is emitted today                                                                                                 |
+| OpenCode API / CLI           | structured error metadata               | `heuristic` | Preserves `resetAt` / retry hints on rate-limit errors (CLI `error` events carry `status` / `retryAfterMs`), but no proactive normalized snapshot is emitted today                                            |
 
 Auto-pause semantics follow the precision:
 
@@ -508,9 +508,14 @@ Environment variables:
 
 Model IDs use the `provider/model` format (e.g. `anthropic/claude-sonnet-4`, `openai/gpt-4o`, `google/gemini-2.0-flash-001`). Some models are available for free (suffixed with `:free`).
 
-### OpenCode (API)
+### OpenCode (API + CLI)
 
-OpenCode integration uses the local or remote `opencode serve` HTTP server. This is the recommended mode for `@aif/runtime` because it provides session APIs and event streams through a stable OpenAPI surface.
+The OpenCode adapter supports two transports:
+
+- **`api` (default)** — the local or remote `opencode serve` HTTP server. Recommended when you need session browsing, event streams, and per-request control through a stable OpenAPI surface.
+- **`cli`** — spawns the `opencode` CLI (`opencode run --format json`) as a child process. Best for running local models that the CLI already knows about (`opencode auth login` / `opencode.json`), no server required. The prompt is delivered over stdin, session resume works via `--session <id>`, and token usage is read from `step_finish` events when the provider reports it.
+
+API stays the default transport for backward compatibility (`supportedTransports: ["api", "cli"]`).
 
 ```json
 {
@@ -525,13 +530,26 @@ OpenCode integration uses the local or remote `opencode serve` HTTP server. This
 }
 ```
 
+```json
+{
+  "projectId": "PROJECT_UUID",
+  "name": "OpenCode CLI (local models)",
+  "runtimeId": "opencode",
+  "providerId": "opencode",
+  "transport": "cli",
+  "defaultModel": "lmstudio/qwen2.5-vl-7b-instruct",
+  "enabled": true
+}
+```
+
 OpenCode-specific options:
 
 - `baseUrl` — OpenCode server URL (defaults to `OPENCODE_BASE_URL` or `http://127.0.0.1:4096`)
 - `serverUsername` — Basic auth username for protected servers (defaults to `opencode`)
 - `serverPassword` — Basic auth password for protected servers (or set `OPENCODE_SERVER_PASSWORD`)
 - `timeoutMs` — Request timeout override for OpenCode API calls
-- `reasoningEffort` — a value derived from the selected model's OpenCode variants
+- `reasoningEffort` — a value derived from the selected model's OpenCode variants; on CLI transport it maps to the `provider/model#variant` suffix (an explicit `modelVariant` option wins over `reasoningEffort`)
+- `opencodeCliPath` — CLI transport only: explicit path to the `opencode` executable
 
 Environment variables:
 
@@ -539,6 +557,7 @@ Environment variables:
 - `OPENCODE_SERVER_USERNAME` — default username for basic auth
 - `OPENCODE_SERVER_PASSWORD` — password for basic auth protected servers
 - `OPENCODE_PROVIDER_ID` — default provider ID when runtime profile model does not include `provider/model`
+- `OPENCODE_CLI_PATH` — CLI transport only: default executable path; when unset the adapter probes `~/.opencode/bin/opencode` and common bin locations, then falls back to `opencode` on `PATH`
 
 Quick start:
 
@@ -546,7 +565,24 @@ Quick start:
 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-For Dockerized deployments, expose the OpenCode server and set profile `baseUrl` to the container/network address.
+CLI transport quick start:
+
+```bash
+# OpenCode itself must be installed and authenticated for the provider you use:
+npm i -g @opencode/cli        # OpenCode v2 (bin: opencode); auth: opencode auth login
+opencode models               # verify the model ID you want to put in the profile
+```
+
+CLI transport specifics:
+
+- Model IDs use the OpenCode CLI format `provider/model` (e.g. `lmstudio/qwen2.5-vl-7b-instruct`, `strata/qwen3.8-flash-next-iq3_s`). Set the profile `providerID` option when the model ID has no provider prefix; a variant suffix (`provider/model#variant`) selects reasoning effort.
+- Model discovery runs `opencode models`; connection validation runs `opencode --version`. A missing binary is surfaced as the structured error `OPENCODE_CLI_NOT_FOUND` with install guidance in the diagnosis.
+- Authentication is OpenCode's own (`opencode auth login`, `opencode.json`) — the adapter never forwards provider API keys to the child process. The child environment is curated: `OPENCODE_*`, `AIF_*` and proxy variables are forwarded, `OPENAI_*`/`ANTHROPIC_*` keys are blocked.
+- `AGENT_BYPASS_PERMISSIONS=true` (`execution.bypassPermissions`) maps to the CLI `--auto` flag.
+- Session browsing (`supportsSessionList`) is API-only; CLI runs still resume sessions via `--session`.
+- Usage reporting is `PARTIAL`: `step_finish` events carry token/cost totals only when the underlying provider reports usage — local models frequently omit them.
+
+For Dockerized deployments, expose the OpenCode server and set profile `baseUrl` to the container/network address. The api/agent images also ship the pinned `@opencode/cli` package (`OPENCODE_VERSION` build arg), so CLI-transport profiles work inside containers out of the box; run `opencode auth login` inside the container (or mount `~/.local/share/opencode`) for providers that need credentials.
 
 Permission handling:
 

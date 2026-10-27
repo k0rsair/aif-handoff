@@ -87,6 +87,7 @@ const envSchema = z.object({
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
   CODEX_CLI_PATH: z.string().optional(),
+  OPENCODE_CLI_PATH: z.string().optional(),
   HTTP_PROXY: z.string().optional(),
   HTTPS_PROXY: z.string().optional(),
   ALL_PROXY: z.string().optional(),

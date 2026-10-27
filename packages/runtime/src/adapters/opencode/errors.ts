@@ -27,6 +27,19 @@ function messageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Structured spawn-failure detection: child_process emits ENOENT when the
+ * CLI executable cannot be resolved. Branching on `error.code` (a structured
+ * field) keeps this compliant with the no-message-patterns rule.
+ */
+function spawnNotFoundCode(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
 function classify(
   message: string,
   httpStatus?: number,
@@ -109,6 +122,16 @@ export function classifyOpenCodeRuntimeError(
       message,
       CATEGORY_TO_ADAPTER_CODE[error.category],
       error.category,
+      error,
+      mergedMetadata,
+    );
+  }
+
+  if (spawnNotFoundCode(error)) {
+    return new OpenCodeRuntimeAdapterError(
+      message,
+      "OPENCODE_CLI_NOT_FOUND",
+      "transport",
       error,
       mergedMetadata,
     );

@@ -160,5 +160,12 @@ it("opencode adapter has expected capabilities", async () => {
   expect(opencode.descriptor.capabilities.supportsModelDiscovery).toBe(true);
   expect(opencode.descriptor.capabilities.supportsCustomEndpoint).toBe(true);
   expect(opencode.descriptor.defaultTransport).toBe("api");
+  expect(opencode.descriptor.supportedTransports).toEqual(["api", "cli"]);
   expect(opencode.descriptor.lightModel).toBeNull();
+
+  const cliCaps = opencode.getEffectiveCapabilities?.("cli");
+  expect(cliCaps?.supportsResume).toBe(true);
+  expect(cliCaps?.supportsSessionList).toBe(false);
+  expect(cliCaps?.supportsModelDiscovery).toBe(true);
+  expect(cliCaps?.usageReporting).toBe("partial");
 });

@@ -63,6 +63,7 @@ FROM base AS api
 ENV NODE_ENV=production \
     HOME=/home/node \
     CODEX_CLI_PATH=/app/node_modules/.bin/codex \
+    OPENCODE_CLI_PATH=/usr/local/bin/opencode \
     PATH=/app/node_modules/.bin:${PATH}
 # Claude Code CLI. NOTE: the SDK transport does NOT spawn this — `@anthropic-ai/
 # claude-agent-sdk` (pinned in package.json, currently bundling Claude Code
@@ -74,8 +75,14 @@ ENV NODE_ENV=production \
 # strings used to suppress Co-Authored-By trailers and exit with code 1.
 # Override with `--build-arg CLAUDE_CODE_VERSION=...`.
 ARG CLAUDE_CODE_VERSION=2.1.220
+# OpenCode CLI: backs the opencode adapter's CLI transport (`opencode run
+# --format json`) for local/CLI-native model setups. Pinned like the other
+# CLIs for reproducibility; OpenCode v2 publishes as `@opencode/cli` on npm
+# (`opencode-ai` is the legacy v1 line). Override with
+# `--build-arg OPENCODE_VERSION=...`.
+ARG OPENCODE_VERSION=2.1.4
 RUN apt-install ca-certificates gosu git \
-    && npm i -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+    && npm i -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION}
 COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/packages/shared ./packages/shared
 COPY --chown=node:node --from=build /app/packages/data ./packages/data
@@ -114,6 +121,7 @@ FROM base AS agent
 ENV NODE_ENV=production \
     HOME=/home/node \
     CODEX_CLI_PATH=/app/node_modules/.bin/codex \
+    OPENCODE_CLI_PATH=/usr/local/bin/opencode \
     PATH=/app/node_modules/.bin:${PATH}
 # jq / python3 / gh back the consumer repo's edit-time and commit-time gates that run
 # inside this container: jq parses the hook stdin payload (nearly every PostToolUse hook
@@ -123,9 +131,12 @@ ENV NODE_ENV=production \
 # Diagnosed 2026-07-23 by a parity audit run live inside this image.
 # Claude Code CLI: backs the CLI transport + probes only (the SDK transport uses
 # the binary bundled with @anthropic-ai/claude-agent-sdk). See the api stage above.
+# OpenCode CLI (`@opencode/cli`): backs the opencode adapter CLI transport. See
+# the api stage above.
 ARG CLAUDE_CODE_VERSION=2.1.220
+ARG OPENCODE_VERSION=2.1.4
 RUN apt-install ca-certificates gosu git curl jq python3 gh \
-    && npm i -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+    && npm i -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION}
 COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/packages/shared ./packages/shared
 COPY --chown=node:node --from=build /app/packages/data ./packages/data

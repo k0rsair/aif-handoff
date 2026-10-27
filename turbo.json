@@ -28,6 +28,7 @@
     "ANTHROPIC_*",
     "OPENAI_*",
     "CODEX_CLI_PATH",
+    "OPENCODE_CLI_PATH",
     "PORT",
     "POLL_INTERVAL_MS",
     "DATABASE_URL",

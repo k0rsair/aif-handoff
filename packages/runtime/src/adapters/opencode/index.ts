@@ -25,7 +25,9 @@ import {
   validateOpenCodeApiConnection,
   type OpenCodeApiLogger,
 } from "./api.js";
-import { classifyOpenCodeRuntimeError } from "./errors.js";
+import { listOpenCodeCliModels, runOpenCodeCli } from "./cli.js";
+import { probeOpenCodeCli, resolveCliPath } from "./cliPath.js";
+import { classifyOpenCodeRuntimeError, OpenCodeRuntimeAdapterError } from "./errors.js";
 import { RuntimeExecutionError } from "../../errors.js";
 
 export type OpenCodeRuntimeAdapterLogger = OpenCodeApiLogger;
@@ -35,6 +37,8 @@ export interface CreateOpenCodeRuntimeAdapterOptions {
   providerId?: string;
   displayName?: string;
   logger?: OpenCodeRuntimeAdapterLogger;
+  /** Explicit OpenCode CLI executable default (overridable per-run via options.opencodeCliPath). */
+  cliPath?: string;
 }
 
 const API_CAPABILITIES: RuntimeCapabilities = {
@@ -52,6 +56,44 @@ const API_CAPABILITIES: RuntimeCapabilities = {
   // provider as opted-out of usage tracking rather than showing phantom zeros.
   usageReporting: UsageReporting.NONE,
 };
+
+// CLI transport (`opencode run --format json`): `step_finish` events carry
+// token/cost totals when the provider reports usage (local models often do
+// not), and timeout/kill paths may miss the final step, so PARTIAL is the
+// honest declaration. Session browsing is an API-server feature only.
+const CLI_CAPABILITIES: RuntimeCapabilities = {
+  supportsResume: true,
+  supportsSessionFork: false,
+  supportsSessionList: false,
+  supportsAgentDefinitions: false,
+  supportsStreaming: true,
+  supportsModelDiscovery: true,
+  supportsApprovals: false,
+  supportsCustomEndpoint: false,
+  usageReporting: UsageReporting.PARTIAL,
+};
+
+function resolveTransport(
+  input: { transport?: RuntimeTransport; options?: Record<string, unknown> },
+  logger?: OpenCodeRuntimeAdapterLogger,
+): RuntimeTransport {
+  const raw =
+    input.transport ??
+    (typeof input.options?.transport === "string" ? input.options.transport : undefined);
+
+  if (raw === RuntimeTransport.CLI) return RuntimeTransport.CLI;
+  if (raw === RuntimeTransport.API || raw === undefined) return RuntimeTransport.API;
+
+  logger?.warn?.(
+    {
+      runtimeId: "opencode",
+      unknownTransport: raw,
+      fallbackTransport: RuntimeTransport.API,
+    },
+    "OpenCode adapter received an unsupported transport; falling back to API",
+  );
+  return RuntimeTransport.API;
+}
 
 const DEFAULT_OPENCODE_MODELS: RuntimeModel[] = [
   {
@@ -85,6 +127,14 @@ function createFallbackLogger(): OpenCodeRuntimeAdapterLogger {
 
 function diagnoseErrorMessage(input: RuntimeDiagnoseErrorInput): string {
   const message = input.error instanceof Error ? input.error.message : String(input.error);
+
+  // CLI-specific: spawn failure for a missing binary (structured code)
+  if (
+    input.error instanceof OpenCodeRuntimeAdapterError &&
+    input.error.adapterCode === "OPENCODE_CLI_NOT_FOUND"
+  ) {
+    return "OpenCode CLI binary not found. Install OpenCode (https://opencode.ai) or point options.opencodeCliPath / OPENCODE_CLI_PATH at the executable. On the host, `opencode auth login` configures provider credentials (including local models).";
+  }
 
   // Primary: dispatch on structured category when available
   if (input.error instanceof RuntimeExecutionError && input.error.category !== "unknown") {
@@ -149,6 +199,7 @@ export function createOpenCodeRuntimeAdapter(
   const runtimeId = options.runtimeId ?? "opencode";
   const providerId = options.providerId ?? "opencode";
   const logger = options.logger ?? createFallbackLogger();
+  const cliDefaults = options.cliPath ? { opencodeCliPath: options.cliPath } : undefined;
 
   return {
     descriptor: {
@@ -160,17 +211,23 @@ export function createOpenCodeRuntimeAdapter(
       lightModel: null,
       defaultBaseUrlEnvVar: "OPENCODE_BASE_URL",
       defaultModelPlaceholder: "anthropic/claude-sonnet-4",
-      supportedTransports: [RuntimeTransport.API],
+      supportedTransports: [RuntimeTransport.API, RuntimeTransport.CLI],
       defaultTransport: RuntimeTransport.API,
       capabilities: API_CAPABILITIES,
     },
 
+    getEffectiveCapabilities(transport?: RuntimeTransport): RuntimeCapabilities {
+      return transport === RuntimeTransport.CLI ? CLI_CAPABILITIES : API_CAPABILITIES;
+    },
+
     async run(input: RuntimeRunInput): Promise<RuntimeRunResult> {
+      const transport = resolveTransport(input, logger);
+
       logger.info?.(
         {
           runtimeId,
           profileId: input.profileId ?? null,
-          transport: input.transport ?? RuntimeTransport.API,
+          transport,
           sessionId: input.sessionId ?? null,
           model: input.model ?? null,
           stream: input.stream ?? null,
@@ -179,6 +236,13 @@ export function createOpenCodeRuntimeAdapter(
       );
 
       try {
+        if (transport === RuntimeTransport.CLI) {
+          return await runOpenCodeCli(
+            { ...input, transport: RuntimeTransport.CLI },
+            logger,
+            cliDefaults,
+          );
+        }
         return await runOpenCodeApi({ ...input, transport: RuntimeTransport.API }, logger);
       } catch (error) {
         logger.error?.(
@@ -194,16 +258,26 @@ export function createOpenCodeRuntimeAdapter(
     },
 
     async resume(input: RuntimeRunInput & { sessionId: string }): Promise<RuntimeRunResult> {
+      const transport = resolveTransport(input, logger);
+
       logger.info?.(
         {
           runtimeId,
           profileId: input.profileId ?? null,
+          transport,
           sessionId: input.sessionId,
         },
         "OpenCode adapter resume invoked",
       );
 
       try {
+        if (transport === RuntimeTransport.CLI) {
+          return await runOpenCodeCli(
+            { ...input, transport: RuntimeTransport.CLI, resume: true },
+            logger,
+            cliDefaults,
+          );
+        }
         return await runOpenCodeApi(
           { ...input, transport: RuntimeTransport.API, resume: true },
           logger,
@@ -228,11 +302,46 @@ export function createOpenCodeRuntimeAdapter(
     async validateConnection(
       input: RuntimeConnectionValidationInput,
     ): Promise<RuntimeConnectionValidationResult> {
+      const transport = resolveTransport(input, logger);
+
+      if (transport === RuntimeTransport.CLI) {
+        const cliPath = resolveCliPath(input.options, cliDefaults?.opencodeCliPath);
+        const probe = probeOpenCodeCli(cliPath);
+        if (!probe.ok) {
+          return {
+            ok: false,
+            message: `OpenCode CLI is not reachable (${cliPath}): ${probe.error ?? "unknown error"}`,
+          };
+        }
+        return {
+          ok: true,
+          message: `OpenCode CLI ${probe.version ?? "unknown"} (${cliPath})`,
+        };
+      }
+
       return validateOpenCodeApiConnection({ ...input, transport: RuntimeTransport.API });
     },
 
     async listModels(input: RuntimeModelListInput): Promise<RuntimeModel[]> {
+      const transport = resolveTransport(input, logger);
+
       try {
+        if (transport === RuntimeTransport.CLI) {
+          const models = listOpenCodeCliModels(input, logger, cliDefaults);
+          if (models.length > 0) {
+            logger.debug?.(
+              {
+                runtimeId: input.runtimeId,
+                profileId: input.profileId ?? null,
+                modelCount: models.length,
+              },
+              "Fetched model list from OpenCode CLI",
+            );
+            return models;
+          }
+          throw new Error("OpenCode CLI returned an empty model list");
+        }
+
         const models = await listOpenCodeApiModels(input);
         if (models.length > 0) {
           logger.debug?.(
@@ -250,6 +359,7 @@ export function createOpenCodeRuntimeAdapter(
           {
             runtimeId: input.runtimeId,
             profileId: input.profileId ?? null,
+            transport,
           },
           "OpenCode model discovery failed, falling back to built-in list",
         );

@@ -62,6 +62,31 @@ describe("validateResolvedRuntimeProfile", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("opencode CLI transport does not require codexCliPath", () => {
+    const result = validateResolvedRuntimeProfile(
+      profile({
+        runtimeId: "opencode",
+        providerId: "opencode",
+        transport: RuntimeTransport.CLI,
+        options: {},
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.warnings.some((w) => w.includes("codexCliPath"))).toBe(false);
+  });
+
+  it("opencode CLI transport accepts opencodeCliPath option", () => {
+    const result = validateResolvedRuntimeProfile(
+      profile({
+        runtimeId: "opencode",
+        providerId: "opencode",
+        transport: RuntimeTransport.CLI,
+        options: { opencodeCliPath: "/home/node/.opencode/bin/opencode" },
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it("CLI transport does not warn about API key", () => {
     const result = validateResolvedRuntimeProfile(
       profile({

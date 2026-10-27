@@ -73,6 +73,63 @@ describe("resolveRuntimeProfile", () => {
     expect(resolved.transport).toBe("cli");
   });
 
+  it("falls back to opencode API defaults when no profile is selected", () => {
+    const resolved = resolveRuntimeProfile({
+      source: "none",
+      profile: null,
+      fallbackRuntimeId: "opencode",
+      fallbackProviderId: "opencode",
+      env: {},
+    });
+
+    expect(resolved.runtimeId).toBe("opencode");
+    expect(resolved.providerId).toBe("opencode");
+    expect(resolved.transport).toBe("api");
+  });
+
+  it("honors an explicit opencode CLI transport profile", () => {
+    const resolved = resolveRuntimeProfile({
+      source: "project_default",
+      profile: {
+        id: "profile-opencode-cli",
+        runtimeId: "opencode",
+        providerId: "opencode",
+        transport: "cli",
+        baseUrl: null,
+        apiKeyEnvVar: null,
+        defaultModel: "lmstudio/qwen2.5-vl-7b-instruct",
+        headers: {},
+        options: {},
+        enabled: true,
+      },
+      env: {},
+    });
+
+    expect(resolved.transport).toBe("cli");
+    expect(resolved.model).toBe("lmstudio/qwen2.5-vl-7b-instruct");
+  });
+
+  it("injects OPENCODE_CLI_PATH env default into CLI transport options", () => {
+    const resolved = resolveRuntimeProfile({
+      source: "system_default",
+      profile: {
+        id: "profile-opencode-cli",
+        runtimeId: "opencode",
+        providerId: "opencode",
+        transport: "cli",
+        baseUrl: null,
+        apiKeyEnvVar: null,
+        defaultModel: null,
+        headers: {},
+        options: {},
+        enabled: true,
+      },
+      env: { OPENCODE_CLI_PATH: "/app/bin/opencode" },
+    });
+
+    expect(resolved.options.opencodeCliPath).toBe("/app/bin/opencode");
+  });
+
   it("does not apply OPENAI env API defaults to local Codex SDK profiles", () => {
     const resolved = resolveRuntimeProfile({
       source: "project_default",

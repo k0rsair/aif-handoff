@@ -10,6 +10,7 @@ services:
         ALL_PROXY: ${ALL_PROXY:-}
         NO_PROXY: ${NO_PROXY:-}
         CODEX_VERSION: ${CODEX_VERSION:-0.162.1}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-2.1.4}
     ports:
       - "${PORT:-3009}:3009"
     env_file: .env
@@ -26,6 +27,7 @@ services:
       - ${PROJECTS_DIR:-${PWD}/projects}:${PROJECTS_MOUNT:-/home/www}
       - claude-auth:/home/node/.claude
       - codex-auth:/home/node/.codex
+      - opencode-auth:/home/node/.local/share/opencode
     restart: unless-stopped
 
   web:
@@ -56,6 +58,7 @@ services:
         ALL_PROXY: ${ALL_PROXY:-}
         NO_PROXY: ${NO_PROXY:-}
         CODEX_VERSION: ${CODEX_VERSION:-0.162.1}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-2.1.4}
     env_file: .env
     environment:
       - DATABASE_URL=/data/aif.sqlite
@@ -74,6 +77,7 @@ services:
       - ${PROJECTS_DIR:-${PWD}/projects}:${PROJECTS_MOUNT:-/home/www}
       - claude-auth:/home/node/.claude
       - codex-auth:/home/node/.codex
+      - opencode-auth:/home/node/.local/share/opencode
     depends_on:
       - api
     restart: unless-stopped
@@ -110,3 +114,4 @@ volumes:
   db-data:
   claude-auth:
   codex-auth:
+  opencode-auth:

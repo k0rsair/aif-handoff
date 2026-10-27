@@ -108,6 +108,7 @@ Docker-specific environment variables:
 | `PROJECTS_MOUNT`     | `/home/www`  | Project files path inside containers                         |
 | `PROJECTS_HOST_ROOT` | `${PWD}`     | Compose-internal repo root for relative `PROJECTS_DIR` (dev) |
 | `CODEX_VERSION`      | `0.162.1`    | npm selector used to install Codex SDK and CLI during build  |
+| `OPENCODE_VERSION`   | `2.1.4`      | npm selector used to install the OpenCode CLI during build   |
 
 When running the dev Docker Compose setup, `PROJECTS_DIR` is the host directory
 mounted into the containers at `PROJECTS_MOUNT`. Paths outside that mount are
@@ -126,6 +127,11 @@ reviewed `0.162.1` baseline is used by default. The SDK and its matching CLI
 dependency are resolved together during the Docker build. Use `docker compose
 build --no-cache` when a moving selector such as `latest` must be refreshed
 despite the Docker layer cache.
+
+`OPENCODE_VERSION` pins the OpenCode CLI (`@opencode/cli`) installed into the
+api/agent images for the OpenCode CLI transport. OpenCode v2 publishes as
+`@opencode/cli` on npm; the legacy `opencode-ai` package is the v1 line and is
+not used.
 
 ## Installation without Docker
 
